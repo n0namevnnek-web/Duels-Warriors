@@ -1,0 +1,853 @@
+--[[
+    ================================================================
+    [ SCRIPT INFORMATION ]
+    Project: Custom Script
+    Author: OYB
+    YouTube: https://www.youtube.com/channel/UCAlXXV1Hbvf7WbfXARuVtiQ
+    
+    [ TERMS AND CONDITIONS ]
+    - You ARE allowed to use and modify this script for your own games.
+    - You ARE NOT allowed to re-upload, redistribute, or claim 
+      ownership of this script.
+    - Removing or altering these credits is strictly prohibited.
+    
+    Copyright (c) 2026 OYB. All rights reserved.
+    ================================================================
+]]
+
+-- ⚠️ IMPORTANT: Put this code at the VERY TOP of your Main Script (before obfuscating) ⚠️
+
+local ProtectionConfig = {
+    -- 🔴 CRITICAL: This MUST exactly match the 'Secret' value in your Key System's Config!
+    -- If your Key System has: Secret = "Test"
+    -- Then this must also be: SecretKey = "Test"
+    SecretKey = "2107",
+    
+    -- The name of your Hub (shown in the kick message if they try to bypass)
+    HubName = "NNVN "
+}
+
+-- Anti-Bypass Logic: Checks if the Key System successfully set the global variable
+if not _G[ProtectionConfig.SecretKey] then
+    local player = game:GetService("Players").LocalPlayer
+    if player then
+        player:Kick("\n🛡️ Unauthorized Execution 🛡️\n\nPlease use the official Key System to run " .. ProtectionConfig.HubName)
+    end
+    return -- Stops the rest of the script from loading!
+end
+
+-------------------------------------------------------------------------------
+-- 👇 YOUR MAIN SCRIPT CODE STARTS HERE 👇
+-------------------------------------------------------------------------------
+--[[
+    NNVN Hub | Main Script
+    This project is open-source and intended for learning and personal use.
+
+    Support:
+    If you encounter issues, open a ticket in the Discord server.
+    You may also contact me (@N0NAMEVN) via Discord for questions about the code.
+
+    -- Made by N0NAMEVN
+    GitHub: https://github.com/n0namevn
+    Discord: https://discord.gg/DwRT2nH93D
+]]
+
+repeat task.wait() until game:IsLoaded()
+if workspace.DistributedGameTime < 3 then
+    task.wait(3 - workspace.DistributedGameTime)
+end
+
+-- Load Rayfield Library
+local Rayfield
+local Success, Error = pcall(function()
+    Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+end)
+
+if not Success then
+    return game.Players.LocalPlayer:Kick("Failed to load Rayfield UI library. Please try again.")
+end
+
+local Running = true
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local clonerefFunction = cloneref or clone_ref or cloneref or clone_reference
+local function ns__cloneref(Object)
+    if not clonerefFunction then
+        return Object
+    end
+
+    local Success, Result = pcall(clonerefFunction, Object)
+    return Success and Result or Object
+end
+
+local UserInputService = game:GetService("UserInputService")
+local TeleportService = game:GetService("TeleportService")
+local RunService = game:GetService("RunService")
+local CoreGui = ns__cloneref(game:GetService("CoreGui"))
+local Camera = workspace.CurrentCamera
+
+local Connections = {}
+
+local function GetRoot(Character)
+    return Character and (Character.PrimaryPart or Character:FindFirstChild("HumanoidRootPart"))
+end
+
+local function RemoveDrawing(Object)
+    if Object then
+        pcall(function()
+            Object:Remove()
+        end)
+    end
+end
+
+local CachedPlayers = {}
+
+local function ClearCache(Player)
+    local Cache = CachedPlayers[Player]
+    if Cache then
+        RemoveDrawing(Cache.ESP)
+        CachedPlayers[Player] = nil
+    end
+end
+
+local function CachePlayer(Player)
+    if Player == LocalPlayer then
+        return
+    end
+
+    local Cache = CachedPlayers[Player] or {}
+
+    local Character = Player.Character
+    if not Character then
+        ClearCache(Player)
+        return
+    end
+
+    Cache.Character = Character
+
+    local Root = GetRoot(Character)
+    if not Root then
+        ClearCache(Player)
+        return
+    end
+
+    Cache.Root = Root
+    Cache.Humanoid = Character:FindFirstChildOfClass("Humanoid")
+    Cache.Head = Character:FindFirstChild("Head")
+
+    local ESP = Cache.ESP
+    if not ESP then
+        ESP = Drawing.new("Text")
+        ESP.Size = 16
+        ESP.Center = true
+        ESP.Outline = true
+        ESP.Visible = false
+        Cache.ESP = ESP
+    end
+
+    CachedPlayers[Player] = Cache
+end
+
+local function AddCache(Player)
+    CachePlayer(Player)
+
+    table.insert(Connections, Player.CharacterAdded:Connect(function()
+        CachePlayer(Player)
+    end))
+
+    table.insert(Connections, Player.CharacterRemoving:Connect(function()
+        ClearCache(Player)
+    end))
+end
+
+task.spawn(function()
+    while true do
+        for _, Player in ipairs(Players:GetPlayers()) do
+            local Cache = CachedPlayers[Player]
+
+            if not Cache then
+                AddCache(Player)
+            else
+                if not Cache.Character or not Cache.Root then
+                    AddCache(Player)
+                end
+            end
+        end
+
+        if not Running then
+            break
+        end
+
+        task.wait(2.5)
+    end
+end)
+
+table.insert(Connections, Players.PlayerAdded:Connect(CachePlayer))
+table.insert(Connections, Players.PlayerRemoving:Connect(ClearCache))
+
+local LocalCharacter = nil
+local LocalHumanoid = nil
+local LocalHead = nil
+local LocalRoot = nil
+local SkillList = LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("Lobby"):WaitForChild("UI_Skill"):WaitForChild("List")
+local FunctionFolder = workspace:WaitForChild("Scene"):WaitForChild("Function")
+local EventFolder = workspace:WaitForChild("Event")
+local ShopModuleRE = EventFolder:WaitForChild("ShopModule_RemoteEvent")
+local EquipmentRF = EventFolder:WaitForChild("Equipment_RemoteFunction")
+local FireProximityPrompt = fireproximityprompt or fire_proximity_prompt
+
+local Configuration = {
+    AutoWeapon = false,
+    AutoFirstSkill = false,
+    AutoSecondSkill = false,
+
+    Speed = false,
+    SpeedAmount = 0.5,
+    InfiniteJump = false,
+
+    Attaching = false,
+    BackOffset = 1.5,
+    UpOffset = 1.25,
+    BodyVelocity = true,
+
+    ESPEnabled = false,
+    ESPShowNames = true,
+    ESPShowHealth = true,
+    ESPShowDistance = true,
+    ESPColor = Color3.fromRGB(255, 255, 255),
+
+    AutoForge = false,
+    AutoAbility = false,
+
+    AntiAFK = true,
+    AntiRagdoll = false,
+    GodMode = false,
+
+    FOVChanger = false,
+    FOVValue = 90
+}
+
+local VirtualUser = ns__cloneref(game:GetService("VirtualUser"))
+table.insert(Connections, LocalPlayer.Idled:Connect(function()
+    if Configuration.AntiAFK then
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end
+end))
+
+table.insert(Connections, RunService.Heartbeat:Connect(function()
+    local CurrentCharacter = LocalPlayer.Character
+    if not CurrentCharacter or not CurrentCharacter.Parent then
+        LocalCharacter, LocalHumanoid, LocalHead, LocalRoot = nil, nil, nil, nil
+        return
+    end
+
+    LocalCharacter = CurrentCharacter
+
+    if not LocalHumanoid or LocalHumanoid.Parent ~= LocalCharacter then
+        LocalHumanoid = LocalCharacter:FindFirstChildOfClass("Humanoid")
+    end
+
+    if not LocalHead or LocalHead.Parent ~= LocalCharacter then
+        LocalHead = LocalCharacter:FindFirstChild("Head")
+    end
+
+    if not LocalRoot or LocalRoot.Parent ~= LocalCharacter then
+        LocalRoot = LocalCharacter.PrimaryPart or LocalCharacter:FindFirstChild("HumanoidRootPart") or LocalCharacter:FindFirstChild("Torso")
+    end
+end))
+
+table.insert(Connections, UserInputService.JumpRequest:Connect(function()
+    if Configuration.InfiniteJump and LocalHumanoid then
+        LocalHumanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end))
+
+local function RunGodMode(Action)
+    if Action then
+        EquipmentRF:InvokeServer({ ["TYPE"] = "CanPreview" })
+    else
+        EquipmentRF:InvokeServer({ ["TYPE"] = "ClosePreview" })
+    end
+end
+
+task.spawn(function()
+    while true do
+        if not Running then
+            break
+        end
+
+        if Configuration.GodMode then
+            RunGodMode(true)
+            task.wait(2.45)
+        end
+
+        task.wait()
+    end
+end)
+
+local function UseSkill(SkillName, KeyCode)
+    local Skill = LocalCharacter and SkillList:FindFirstChild(SkillName)
+    if not Skill then
+        return
+    end
+
+    local FrameStatus = Skill:FindFirstChild("Frame_Status")
+    if not FrameStatus then
+        return
+    end
+
+    local FrameCD = FrameStatus:FindFirstChild("Frame_CD")
+    if not FrameCD or FrameCD.Size.Y.Scale ~= 0 then
+        return
+    end
+
+    local Communicate = LocalCharacter:FindFirstChild("Communicate")
+    if Communicate and Communicate:IsA("RemoteEvent") then
+        Communicate:FireServer({
+            ["Key"] = KeyCode,
+            ["State"] = Enum.UserInputState.Begin
+        })
+    end
+end
+
+task.spawn(function()
+    while true do
+        if not Running then
+            break
+        end
+
+        if Configuration.AutoWeapon then
+            UseSkill("Skill1", Enum.KeyCode.Four)
+        end
+
+        if Configuration.AutoFirstSkill then
+            UseSkill("Skill2", Enum.KeyCode.Two)
+        end
+
+        if Configuration.AutoSecondSkill then
+            UseSkill("Skill3", Enum.KeyCode.Three)
+        end
+
+        task.wait(0.075)
+    end
+end)
+
+table.insert(Connections, RunService.Heartbeat:Connect(function()
+    if Configuration.FOVChanger then
+        Camera.FieldOfView = Configuration.FOVValue
+    end
+
+    if LocalHumanoid and Configuration.AntiRagdoll and ((LocalHumanoid:GetState() == Enum.HumanoidStateType.Ragdoll) or (LocalHumanoid:GetState() == Enum.HumanoidStateType.FallingDown)) then
+        LocalHumanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+    end
+
+    if Configuration.Attaching then
+        if not LocalRoot or not LocalPlayer:GetAttribute("InDuel") then
+            return
+        end
+
+        local ClosestPlayer = nil
+        local BiggestDistance = 185
+        for Player, Cache in next, CachedPlayers do
+            if not Player:GetAttribute("InDuel") then
+                continue
+            end
+
+            local Root = Cache.Root
+            if not Root then
+                continue
+            end
+
+            local Magnitude = (LocalRoot.Position - Root.Position).Magnitude
+            if Magnitude < BiggestDistance then
+                ClosestPlayer = Player
+                BiggestDistance = Magnitude
+            end
+        end
+
+        local ClosestRoot = ClosestPlayer and GetRoot(ClosestPlayer.Character)
+        if ClosestRoot then
+            local ClosestRootCFrame = ClosestRoot.CFrame
+            LocalRoot.CFrame = CFrame.lookAt((ClosestRootCFrame * CFrame.new(0, Configuration.UpOffset, Configuration.BackOffset)).Position, ClosestRootCFrame.Position)
+            if Configuration.BodyVelocity then
+                local BodyVelocity = LocalRoot:FindFirstChildOfClass("BodyVelocity")
+                if BodyVelocity then
+                    BodyVelocity.MaxForce = Vector3.new(5000, 5000, 5000)
+                end
+            end
+        end
+    elseif Configuration.BodyVelocity then
+        local BodyVelocity = LocalRoot and LocalRoot:FindFirstChildOfClass("BodyVelocity")
+        if BodyVelocity then
+            BodyVelocity.MaxForce = Vector3.zero
+        end
+    end
+
+    if Configuration.Speed and LocalHumanoid and LocalRoot then
+        local MoveDirection = LocalHumanoid.MoveDirection
+        if MoveDirection.Magnitude > 0 then
+            LocalRoot.CFrame += MoveDirection * Configuration.SpeedAmount
+        end
+    end
+
+    for Player, Cache in next, CachedPlayers do
+        if not Cache.Character then
+            continue
+        end
+
+        local ESP, IsVisible = Cache.ESP, nil
+        if Configuration.ESPEnabled and Cache.Head and Cache.Humanoid and Cache.Humanoid.Health > 0 then
+            local Screen, OnScreen = Camera:WorldToViewportPoint(Cache.Head.Position)
+            if OnScreen then
+                IsVisible = true
+
+                local TextParts = {}
+                if Configuration.ESPShowNames then
+                    table.insert(TextParts, Player.DisplayName)
+                end
+
+                if Configuration.ESPShowHealth then
+                    table.insert(TextParts, string.format("[%d HP]", math.floor(Cache.Humanoid.Health)))
+                end
+
+                if LocalRoot and Configuration.ESPShowDistance then
+                    table.insert(TextParts, string.format("[%d M]", math.floor((LocalRoot.Position - Cache.Head.Position).Magnitude)))
+                end
+
+                if #TextParts > 0 then
+                    ESP.Text = table.concat(TextParts, "\n")
+                    ESP.Position = Vector2.new(Screen.X - 40, Screen.Y - 40)
+                    ESP.Color = Configuration.ESPColor
+                    ESP.Visible = true
+                else
+                    ESP.Visible = false
+                end
+            end
+        end
+
+        if not IsVisible then
+            ESP.Visible = false
+        end
+    end
+end))
+
+if FireProximityPrompt then
+    task.spawn(function()
+        while true do
+            if not Running then
+                break
+            end
+
+            if Configuration.AutoForge then
+                if FunctionFolder:FindFirstChild("WeaponGacha") then
+                    FireProximityPrompt(FunctionFolder.WeaponGacha.TouchBox.ProximityPrompt)
+                    ShopModuleRE:FireServer({
+                        ["Data"] = { ["ID"] = "420001", ["TYPE"] = "Gold" },
+                        ["TYPE"] = "Gashapon"
+                    })
+                end
+            end
+
+            if Configuration.AutoAbility then
+                pcall(function()
+                    if FunctionFolder:FindFirstChild("AbilityGacha") then
+                        FireProximityPrompt(FunctionFolder.AbilityGacha.TouchPart.ProximityPrompt)
+                        ShopModuleRE:FireServer({
+                            ["Data"] = { ["ID"] = "420004", ["TYPE"] = "Gold" },
+                            ["TYPE"] = "Gashapon"
+                        })
+                    end
+                end)
+            end
+
+            task.wait(0.5)
+        end
+    end)
+end
+
+-- Màu cam nhạt (Light Orange)
+local LightOrange = Color3.fromRGB(255, 180, 100)
+
+-- Create UI with Rayfield - Thêm màu cam nhạt
+local Window = Rayfield:CreateWindow({
+    Name = "NNVN Hub",
+    Icon = 0,
+    LoadingTitle = "NNVN Hub",
+    LoadingSubtitle = "By N0NAMEVN",
+    ConfigurationSaving = {
+       Enabled = false,
+       FolderName = "NNVNHub"
+    },
+    Discord = {
+       Enabled = false,
+       Invite = "DwRT2nH93D",
+       RememberJoins = true
+    },
+    KeySystem = false,
+    Color = LightOrange -- Màu cam nhạt cho toàn bộ UI
+})
+
+-- Combat Tab
+local CombatTab = Window:CreateTab("Combat", 0)
+
+local CombatSection = CombatTab:CreateSection("Combat")
+
+CombatTab:CreateToggle({
+    Name = "Auto Weapon",
+    CurrentValue = Configuration.AutoWeapon,
+    Flag = "AutoWeapon",
+    Callback = function(Value)
+        Configuration.AutoWeapon = Value
+    end
+})
+
+CombatTab:CreateToggle({
+    Name = "Auto First Skill",
+    CurrentValue = Configuration.AutoFirstSkill,
+    Flag = "AutoFirstSkill",
+    Callback = function(Value)
+        Configuration.AutoFirstSkill = Value
+    end
+})
+
+CombatTab:CreateToggle({
+    Name = "Auto Second Skill",
+    CurrentValue = Configuration.AutoSecondSkill,
+    Flag = "AutoSecondSkill",
+    Callback = function(Value)
+        Configuration.AutoSecondSkill = Value
+    end
+})
+
+CombatTab:CreateButton({
+    Name = "Auto All Skills",
+    Callback = function()
+        Rayfield:SetToggle("AutoWeapon", true)
+        Rayfield:SetToggle("AutoFirstSkill", true)
+        Rayfield:SetToggle("AutoSecondSkill", true)
+    end
+})
+
+local MovementSection = CombatTab:CreateSection("Movement")
+
+CombatTab:CreateToggle({
+    Name = "Speed Changer",
+    CurrentValue = Configuration.Speed,
+    Flag = "Speed",
+    Callback = function(Value)
+        Configuration.Speed = Value
+    end
+})
+
+CombatTab:CreateSlider({
+    Name = "Speed Amount",
+    Range = {0, 500},
+    Increment = 0.1,
+    Suffix = "%",
+    CurrentValue = Configuration.SpeedAmount * 100,
+    Flag = "SpeedAmount",
+    Callback = function(Value)
+        Configuration.SpeedAmount = Value * 0.01
+    end
+})
+
+CombatTab:CreateToggle({
+    Name = "Infinite Jump",
+    CurrentValue = Configuration.InfiniteJump,
+    Flag = "InfiniteJump",
+    Callback = function(Value)
+        Configuration.InfiniteJump = Value
+    end
+})
+
+-- Farming Tab
+local FarmingTab = Window:CreateTab("Farming", 0)
+
+local AttachSection = FarmingTab:CreateSection("Attach")
+
+FarmingTab:CreateToggle({
+    Name = "Player Attach",
+    CurrentValue = Configuration.Attaching,
+    Flag = "Attaching",
+    Callback = function(Value)
+        Configuration.Attaching = Value
+    end
+})
+
+FarmingTab:CreateToggle({
+    Name = "Body Velocity",
+    CurrentValue = Configuration.BodyVelocity,
+    Flag = "BodyVelocity",
+    Callback = function(Value)
+        Configuration.BodyVelocity = Value
+
+        local BodyVelocity = LocalRoot and LocalRoot:FindFirstChildOfClass("BodyVelocity")
+        if not Value then
+            if BodyVelocity then
+                BodyVelocity:Destroy()
+            end
+            return
+        end
+
+        if not BodyVelocity and LocalRoot then
+            BodyVelocity = ns__cloneref(Instance.new("BodyVelocity"))
+            BodyVelocity.MaxForce = Vector3.zero
+            BodyVelocity.Velocity = Vector3.zero
+            BodyVelocity.Parent = LocalRoot
+        end
+    end
+})
+
+FarmingTab:CreateSlider({
+    Name = "Offset Back",
+    Range = {0.05, 3},
+    Increment = 0.5,
+    Suffix = "",
+    CurrentValue = Configuration.BackOffset,
+    Flag = "BackOffset",
+    Callback = function(Value)
+        Configuration.BackOffset = Value
+    end
+})
+
+FarmingTab:CreateSlider({
+    Name = "Offset Up",
+    Range = {0.05, 3},
+    Increment = 0.5,
+    Suffix = "",
+    CurrentValue = Configuration.UpOffset,
+    Flag = "UpOffset",
+    Callback = function(Value)
+        Configuration.UpOffset = Value
+    end
+})
+
+-- Visuals Tab
+local VisualsTab = Window:CreateTab("Visuals", 0)
+
+local ESPSection = VisualsTab:CreateSection("ESP")
+
+VisualsTab:CreateToggle({
+    Name = "Enable ESP",
+    CurrentValue = Configuration.ESPEnabled,
+    Flag = "ESPEnabled",
+    Callback = function(Value)
+        Configuration.ESPEnabled = Value
+    end
+})
+
+VisualsTab:CreateToggle({
+    Name = "Show Names",
+    CurrentValue = Configuration.ESPShowNames,
+    Flag = "ESPShowNames",
+    Callback = function(Value)
+        Configuration.ESPShowNames = Value
+    end
+})
+
+VisualsTab:CreateToggle({
+    Name = "Show Health",
+    CurrentValue = Configuration.ESPShowHealth,
+    Flag = "ESPShowHealth",
+    Callback = function(Value)
+        Configuration.ESPShowHealth = Value
+    end
+})
+
+VisualsTab:CreateToggle({
+    Name = "Show Distance",
+    CurrentValue = Configuration.ESPShowDistance,
+    Flag = "ESPShowDistance",
+    Callback = function(Value)
+        Configuration.ESPShowDistance = Value
+    end
+})
+
+VisualsTab:CreateColorPicker({
+    Name = "ESP Color",
+    Color = Configuration.ESPColor,
+    Flag = "ESPColor",
+    Callback = function(Value)
+        Configuration.ESPColor = Value
+    end
+})
+
+-- Shop Tab
+local ShopTab = Window:CreateTab("Shop", 0)
+
+if FireProximityPrompt then
+    local ShopSection = ShopTab:CreateSection("Gacha Shop")
+
+    ShopTab:CreateToggle({
+        Name = "Auto Forge Weapon",
+        CurrentValue = Configuration.AutoForge,
+        Flag = "AutoForge",
+        Callback = function(Value)
+            Configuration.AutoForge = Value
+        end
+    })
+
+    ShopTab:CreateToggle({
+        Name = "Auto Buy Ability",
+        CurrentValue = Configuration.AutoAbility,
+        Flag = "AutoAbility",
+        Callback = function(Value)
+            Configuration.AutoAbility = Value
+        end
+    })
+
+    ShopTab:CreateButton({
+        Name = "Forge Weapon (Once)",
+        Callback = function()
+            if FunctionFolder:FindFirstChild("WeaponGacha") then
+                FireProximityPrompt(FunctionFolder.WeaponGacha.TouchBox.ProximityPrompt)
+                task.delay(1, function()
+                    ShopModuleRE:FireServer({
+                        ["Data"] = { ["ID"] = "420001", ["TYPE"] = "Gold" },
+                        ["TYPE"] = "Gashapon"
+                    })
+                end)
+            end
+        end
+    })
+
+    ShopTab:CreateButton({
+        Name = "Buy Ability (Once)",
+        Callback = function()
+            if FunctionFolder:FindFirstChild("AbilityGacha") then
+                FireProximityPrompt(FunctionFolder.AbilityGacha.TouchPart.ProximityPrompt)
+                task.delay(1, function()
+                    ShopModuleRE:FireServer({
+                        ["Data"] = { ["ID"] = "420004", ["TYPE"] = "Gold" },
+                        ["TYPE"] = "Gashapon"
+                    })
+                end)
+            end
+        end
+    })
+else
+    local ErrorSection = ShopTab:CreateSection("Error")
+    ShopTab:CreateLabel("Function 'fireproximityprompt' is not supported on your executor. Shop features disabled.")
+end
+
+-- Miscellaneous Tab
+local MiscTab = Window:CreateTab("Miscellaneous", 0)
+
+local MiscSection = MiscTab:CreateSection("Miscellaneous")
+
+MiscTab:CreateToggle({
+    Name = "Anti-AFK",
+    CurrentValue = Configuration.AntiAFK,
+    Flag = "AntiAFK",
+    Callback = function(Value)
+        Configuration.AntiAFK = Value
+    end
+})
+
+MiscTab:CreateLabel("If 'Deploying..' doesn't appear on ur character then make sure you haven't used or been in combat for around 15 seconds or more, God Mode will be automatically applied when possible.")
+
+MiscTab:CreateToggle({
+    Name = "God Mode",
+    CurrentValue = Configuration.GodMode,
+    Flag = "GodMode",
+    Callback = function(Value)
+        Configuration.GodMode = Value
+        if not Value then
+            task.delay(0.1, RunGodMode)
+        end
+    end
+})
+
+MiscTab:CreateToggle({
+    Name = "Anti Ragdoll",
+    CurrentValue = Configuration.AntiRagdoll,
+    Flag = "AntiRagdoll",
+    Callback = function(Value)
+        Configuration.AntiRagdoll = Value
+    end
+})
+
+MiscTab:CreateToggle({
+    Name = "FOV Changer",
+    CurrentValue = Configuration.FOVChanger,
+    Flag = "FOVChanger",
+    Callback = function(Value)
+        Configuration.FOVChanger = Value
+        if not Value then
+            Camera.FieldOfView = 70
+        end
+    end
+})
+
+MiscTab:CreateSlider({
+    Name = "FOV Value",
+    Range = {70, 120},
+    Increment = 1,
+    Suffix = "",
+    CurrentValue = Configuration.FOVValue,
+    Flag = "FOVValue",
+    Callback = function(Value)
+        Configuration.FOVValue = Value
+    end
+})
+
+-- Cleanup when UI closes
+while Rayfield:IsOpen() do
+    task.wait()
+end
+
+Running = false
+
+for Index, Connection in next, Connections do
+    Connection:Disconnect()
+    Connections[Index] = nil
+end
+
+if Configuration.GodMode then
+    RunGodMode(false)
+end
+
+for _, Cache in next, CachedPlayers do
+    RemoveDrawing(Cache.ESP)
+end
+
+Camera.FieldOfView = 70
+
+-- Discord invite handling
+if not writefile or not makefolder or not isfile or not isfolder then
+    return
+end
+
+local Base = "N0NAMEVN/NNVNHub/"
+for _, Path in {"N0NAMEVN", "N0NAMEVN/NNVNHub", Base .. "Sounds", Base .. "Configs", Base .. "Cache", Base .. "Logs"} do
+    pcall(function()
+        if not isfolder(Path) then
+            makefolder(Path)
+        end
+    end)
+end
+
+local Request = not isfile("N0NAMEVN/NNVNHub/Cache/Invite.nscache") and (httprequest or http_request or request)
+if Request then
+    local HttpService = game:GetService("HttpService")
+    if pcall(Request, {
+        Url = "http://127.0.0.1:6463/rpc?v=1",
+        Method = "POST",
+        Headers = {
+            ["Content-Type"] = "application/json",
+            Origin = "https://discord.com"
+        },
+        Body = HttpService:JSONEncode({
+            cmd = "INVITE_BROWSER",
+            nonce = HttpService:GenerateGUID(false),
+            args = { code = "DwRT2nH93D" }
+        })
+    }) then
+        writefile("N0NAMEVN/NNVNHub/Cache/Invite.nscache", "DwRT2nH93D")
+    end
+end
+
+print("NNVN Hub | Script unloaded successfully!")
+print(ProtectionConfig.HubName .. " Loaded Successfully!")
